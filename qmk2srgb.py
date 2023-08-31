@@ -8,7 +8,7 @@
 
 import argparse
 import glob
-import json
+import jsoncomment
 import os
 import unicodedata
 
@@ -358,48 +358,55 @@ parser.add_argument("--outdir", help="Output Directory for JS files", default=".
 args = parser.parse_args()
 
 for i_glob in args.inputs:
-    for i_file in glob.glob(i_glob):
-        i_json = None
-        with open(i_file, "r") as f:
-            i_json = json.loads(f.read())
-        k_name = f"{i_json['manufacturer']} {i_json['keyboard_name']}"
-        vid = i_json["usb"]["vid"]
-        pid = i_json["usb"]["pid"]
-        xs = list(set(sorted(x["x"] for x in i_json["rgb_matrix"]["layout"])))
-        ys = list(set(sorted(x["y"] for x in i_json["rgb_matrix"]["layout"])))
-        vkeys = ", ".join(str(x) for x in range(0, len(i_json["rgb_matrix"]["layout"])))
-        vkeynames = []
-        vkeypositions = []
-        unnamed = 0
-        for led in i_json["rgb_matrix"]["layout"]:
-            if "matrix" in led:
-                lbl = next(x for x in list(i_json["layouts"].values())[0]["layout"] if x["matrix"] == led["matrix"])[
-                    "label"
-                ]
-                if not lbl.isascii():
-                    lbl = unicodedata.name(lbl)
-                if "\\" in lbl:
-                    lbl = lbl.replace("\\", "\\\\")
-                if '"' in lbl:
-                    lbl = lbl.replace('"', '\\"')
+    for i_file in glob.glob(i_glob, recursive=True):
+        try:
+            i_json = None
+            with open(i_file, "r") as f:
+                i_json = jsoncomment.JsonComment().loads(f.read())
+            k_name = f"{i_json['manufacturer']} {i_json['keyboard_name']}"
+            vid = i_json["usb"]["vid"]
+            pid = i_json["usb"]["pid"]
+            xs = list(set(sorted(x["x"] for x in i_json["rgb_matrix"]["layout"])))
+            ys = list(set(sorted(x["y"] for x in i_json["rgb_matrix"]["layout"])))
+            vkeys = ", ".join(str(x) for x in range(0, len(i_json["rgb_matrix"]["layout"])))
+            vkeynames = []
+            vkeypositions = []
+            unnamed = 0
+            for led in i_json["rgb_matrix"]["layout"]:
+                lbl = None
+                if "matrix" in led and "layouts" in i_json:
+                    key = next(
+                        (x for x in list(i_json["layouts"].values())[0]["layout"] if x["matrix"] == led["matrix"]), None
+                    )
+                    if key is not None and "label" in key:
+                        lbl = key["label"]
+                        if not lbl.isascii():
+                            lbl = unicodedata.name(lbl)
+                        if "\\" in lbl:
+                            lbl = lbl.replace("\\", "\\\\")
+                        if '"' in lbl:
+                            lbl = lbl.replace('"', '\\"')
+                if lbl is None:
+                    unnamed += 1
+                    lbl = f"Light {unnamed}"
                 vkeynames.append(lbl)
-            else:
-                unnamed += 1
-                vkeynames.append(f"Light {unnamed}")
-            vkeypositions.append([xs.index(led["x"]), ys.index(led["y"])])
-        vkeynames = ", ".join(f'"{x}"' for x in vkeynames)
-        vkeypositions = ", ".join(str(x) for x in vkeypositions)
-        o_file = os.path.join(
-            args.outdir, f"{''.join(x for x in k_name if x.isalnum() or x == ' ').lower().replace(' ', '_')}.js"
-        )
-        with open(o_file, "w") as f:
-            f.write(
-                TEMPLATE.replace("$KNAME$", k_name)
-                .replace("$VID$", vid)
-                .replace("$PID$", pid)
-                .replace("$NX$", str(len(xs)))
-                .replace("$NY$", str(len(ys)))
-                .replace("$VK$", vkeys)
-                .replace("$VKNAMES$", vkeynames)
-                .replace("$VKPOS$", vkeypositions)
+                vkeypositions.append([xs.index(led["x"]), ys.index(led["y"])])
+            vkeynames = ", ".join(f'"{x}"' for x in vkeynames)
+            vkeypositions = ", ".join(str(x) for x in vkeypositions)
+            o_file = os.path.join(
+                args.outdir, f"{''.join(x for x in k_name if x.isalnum() or x == ' ').lower().replace(' ', '_')}.js"
             )
+            with open(o_file, "w") as f:
+                f.write(
+                    TEMPLATE.replace("$KNAME$", k_name)
+                    .replace("$VID$", vid)
+                    .replace("$PID$", pid)
+                    .replace("$NX$", str(len(xs)))
+                    .replace("$NY$", str(len(ys)))
+                    .replace("$VK$", vkeys)
+                    .replace("$VKNAMES$", vkeynames)
+                    .replace("$VKPOS$", vkeypositions)
+                )
+                print(f"Successfully created {o_file}")
+        except Exception as e:
+            print(f"Skipping {i_file} due to exception: {repr(e)}")
