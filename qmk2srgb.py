@@ -23,7 +23,7 @@ import unicodedata
 # - vkeypositions
 
 TEMPLATE = """export function Name() { return "$KNAME$ QMK Keyboard"; }
-export function Version() { return "1.1.5"; }
+export function Version() { return "1.1.6"; }
 export function VendorId() { return $VID$; }
 export function ProductId() { return $PID$; }
 export function Publisher() { return "Polyhaze (@Polyhaze) / Dylan Perks (@Perksey)"; }
@@ -41,7 +41,7 @@ export function ControllableParameters()
 {
     return [
         {"property":"shutdownMode", "group":"lighting", "label":"Shutdown Mode", "type":"combobox", "values":["SignalRGB", "Hardware"], "default":"SignalRGB"},
-        {"property":"shutdownColor", "group":"lighting", "label":"Shutdown Color", "min":"0", "max":"360", "type":"color", "default":"#009bde"},
+        {"property":"shutdownColor", "group":"lighting", "label":"Shutdown Color", "min":"0", "max":"360", "type":"color", "default":"#000000"},
         {"property":"LightingMode", "group":"lighting", "label":"Lighting Mode", "type":"combobox", "values":["Canvas", "Forced"], "default":"Canvas"},
         {"property":"forcedColor", "group":"lighting", "label":"Forced Color", "min":"0", "max":"360", "type":"color", "default":"#009bde"},
     ];
@@ -67,25 +67,21 @@ const MainlineQMKFirmware = 1;
 const VIAFirmware = 2;
 const PluginProtocolVersion = "1.0.4";
 
-export function LedNames()
-{
+export function LedNames() {
     return vKeyNames;
 }
 
-export function LedPositions()
-{
+export function LedPositions() {
     return vKeyPositions;
 }
 
-export function vKeysArrayCount()
-{
+export function vKeysArrayCount() {
     device.log('vKeys ' + vKeys.length);
     device.log('vKeyNames ' + vKeyNames.length);
     device.log('vKeyPositions ' + vKeyPositions.length);
 }
 
-export function Initialize()
-{
+export function Initialize() {
     requestFirmwareType();
     requestQMKVersion();
     requestSignalRGBProtocolVersion();
@@ -95,8 +91,7 @@ export function Initialize()
 
 }
 
-export function Render()
-{
+export function Render() {
     sendColors();
 }
 
@@ -111,6 +106,7 @@ export function Shutdown(SystemSuspending) {
             effectDisable();
         }
     }
+
     vKeysArrayCount(); // For debugging array counts
 
 }
@@ -190,12 +186,7 @@ function returnSignalRGBProtocolVersion(data) {
 
 
     if(PluginProtocolVersion !== SignalRGBProtocolVersion) {
-        device.notify(
-            "Unsupported Protocol Version: ",
-            `This plugin is intended for SignalRGB Protocol version ${PluginProtocolVersion}. This device is version: ${SignalRGBProtocolVersion}`,
-            1,
-            "Documentation"
-        );
+        device.notify("Unsupported Protocol Version: ", `This plugin is intended for SignalRGB Protocol version ${PluginProtocolVersion}. This device is version: ${SignalRGBProtocolVersion}`, 1, "Documentation");
     }
 
     device.pause(30);
@@ -204,12 +195,7 @@ function returnSignalRGBProtocolVersion(data) {
 function requestUniqueIdentifier() //Grab the unique identifier for this keyboard model
 {
     if(device.write([0x00, 0x23], 32) === -1) {
-        device.notify(
-            "Unsupported Firmware: ",
-            `This device is not running SignalRGB-compatible firmware. Click the Open Troubleshooting Docs button to learn more.`,
-            1,
-            "Documentation"
-        );
+        device.notify("Unsupported Firmware: ", `This device is not running SignalRGB-compatible firmware. Click the Open Troubleshooting Docs button to learn more.`, 1, "Documentation");
     }
 
     device.pause(30);
@@ -252,12 +238,7 @@ function returnFirmwareType(data) {
     const FirmwareTypeByte = data[2];
 
     if(!(FirmwareTypeByte === MainlineQMKFirmware || FirmwareTypeByte === VIAFirmware)) {
-        device.notify(
-            "Unsupported Firmware: ",
-            "Click Show Console, and then click on troubleshooting for your keyboard to find out more.",
-            1,
-            "Documentation"
-        );
+        device.notify("Unsupported Firmware: ", "Click Show Console, and then click on troubleshooting for your keyboard to find out more.", 1, "Documentation");
     }
 
     if(FirmwareTypeByte === MainlineQMKFirmware) {
@@ -285,21 +266,32 @@ function effectDisable() //Revert to Hardware Mode
     device.pause(30);
 }
 
+function createSolidColorArray(color) {
+    const rgbdata = new Array(vKeys.length * 3).fill(0);
+
+    for(let iIdx = 0; iIdx < vKeys.length; iIdx++) {
+        const iLedIdx = vKeys[iIdx] * 3;
+        rgbdata[iLedIdx] = color[0];
+        rgbdata[iLedIdx+1] = color[1];
+        rgbdata[iLedIdx+2] = color[2];
+    }
+
+    return rgbdata;
+}
+
 function grabColors(overrideColor) {
-    const rgbdata = [];
+    if(overrideColor) {
+        return createSolidColorArray(hexToRgb(overrideColor));
+    } else if (LightingMode === "Forced") {
+        return createSolidColorArray(hexToRgb(forcedColor));
+    }
+
+    const rgbdata = new Array(vKeys.length * 3).fill(0);
 
     for(let iIdx = 0; iIdx < vKeys.length; iIdx++) {
         const iPxX = vKeyPositions[iIdx][0];
         const iPxY = vKeyPositions[iIdx][1];
-        let color;
-
-        if(overrideColor) {
-            color = hexToRgb(overrideColor);
-        } else if (LightingMode === "Forced") {
-            color = hexToRgb(forcedColor);
-        } else {
-            color = device.color(iPxX, iPxY);
-        }
+        const color = device.color(iPxX, iPxY);
 
         const iLedIdx = vKeys[iIdx] * 3;
         rgbdata[iLedIdx] = color[0];
@@ -327,14 +319,12 @@ function sendColors(overrideColor) {
 }
 
 function StreamLightingData(StartLedIdx, RGBData) {
-    const packet = [0x00, 0x24, StartLedIdx, Math.floor(RGBData.length / 3)];
-
-    packet.push(...RGBData);
+    const packet = [0x00, 0x24, StartLedIdx, Math.floor(RGBData.length / 3)].concat(RGBData);
     device.write(packet, 33);
 }
 
 function hexToRgb(hex) {
-    const result = /^#?([a-f\\d]{2})([a-f\\d]{2})([a-f\\d]{2})$/i.exec(hex);
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
     const colors = [];
     colors[0] = parseInt(result[1], 16);
     colors[1] = parseInt(result[2], 16);
@@ -348,7 +338,7 @@ export function Validate(endpoint) {
 }
 
 export function Image() {
-    return "https://avatars.githubusercontent.com/u/98346428";
+    return "";
 }
 """
 
