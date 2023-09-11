@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # Copyright (c) 2023 Dylan Perks.
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
@@ -345,6 +346,13 @@ export function Image() {
 parser = argparse.ArgumentParser()
 parser.add_argument("inputs", help="QMK info.json files (globs)", nargs="+")
 parser.add_argument("--outdir", help="Output Directory for JS files", default=".")
+parser.add_argument(
+    "--matrix_sizing",
+    help="Instead of being accurate to the original info.json (often generating very large sizes), the first "
+    "coordinate for a given key matrix coordinate will be used for the entire column or row.",
+    action="store_true",
+    default=False,
+)
 args = parser.parse_args()
 
 for i_glob in args.inputs:
@@ -356,15 +364,35 @@ for i_glob in args.inputs:
             k_name = f"{i_json['manufacturer']} {i_json['keyboard_name']}"
             vid = i_json["usb"]["vid"]
             pid = i_json["usb"]["pid"]
-            xs = list(set(sorted(x["x"] for x in i_json["rgb_matrix"]["layout"])))
-            ys = list(set(sorted(x["y"] for x in i_json["rgb_matrix"]["layout"])))
+            xs = list(
+                set(
+                    sorted(
+                        x["x"] if not args.matrix_sizing or "matrix" not in x else x["matrix"][1]
+                        for x in i_json["rgb_matrix"]["layout"]
+                    )
+                )
+            )
+            ys = list(
+                set(
+                    sorted(
+                        x["y"] if not args.matrix_sizing or "matrix" not in x else x["matrix"][0]
+                        for x in i_json["rgb_matrix"]["layout"]
+                    )
+                )
+            )
             vkeys = ", ".join(str(x) for x in range(0, len(i_json["rgb_matrix"]["layout"])))
             vkeynames = []
             vkeypositions = []
             unnamed = 0
+            matxs = {}
+            matys = {}
             for led in i_json["rgb_matrix"]["layout"]:
                 lbl = None
+                ledx = xs.index(led["x"] if not args.matrix_sizing or "matrix" not in led else led["matrix"][1])
+                ledy = ys.index(led["y"] if not args.matrix_sizing or "matrix" not in led else led["matrix"][0])
                 if "matrix" in led and "layouts" in i_json:
+                    ledx = matxs.setdefault(led["matrix"][0], ledx) if args.matrix_sizing else ledx
+                    ledy = matys.setdefault(led["matrix"][1], ledy) if args.matrix_sizing else ledy
                     key = next(
                         (x for x in list(i_json["layouts"].values())[0]["layout"] if x["matrix"] == led["matrix"]), None
                     )
@@ -380,7 +408,7 @@ for i_glob in args.inputs:
                     unnamed += 1
                     lbl = f"Light {unnamed}"
                 vkeynames.append(lbl)
-                vkeypositions.append([xs.index(led["x"]), ys.index(led["y"])])
+                vkeypositions.append([ledx, ledy])
             vkeynames = ", ".join(f'"{x}"' for x in vkeynames)
             vkeypositions = ", ".join(str(x) for x in vkeypositions)
             o_file = os.path.join(
