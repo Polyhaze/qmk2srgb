@@ -367,19 +367,50 @@ for i_glob in args.inputs:
             xs = list(
                 set(
                     sorted(
-                        x["x"] if not args.matrix_sizing or "matrix" not in x else x["matrix"][1]
-                        for x in i_json["rgb_matrix"]["layout"]
+                        (
+                            (x["x"], x["x"], False)
+                            if not args.matrix_sizing or "matrix" not in x
+                            else (x["x"], x["matrix"][1], True)
+                            for x in i_json["rgb_matrix"]["layout"]
+                        ),
+                        key=lambda x: x[1],
                     )
                 )
             )
             ys = list(
                 set(
                     sorted(
-                        x["y"] if not args.matrix_sizing or "matrix" not in x else x["matrix"][0]
-                        for x in i_json["rgb_matrix"]["layout"]
+                        (
+                            (x["y"], x["y"], False)
+                            if not args.matrix_sizing or "matrix" not in x
+                            else (x["y"], x["matrix"][0], True)
+                            for x in i_json["rgb_matrix"]["layout"]
+                        ),
+                        key=lambda x: x[1],
                     )
                 )
             )
+            # TODO NONE OF THE BELOW CODE WILL WORK
+            # essentially this was trying to "guess" where non-matrix-mapped LEDs fell between other matrix-mapped
+            # LEDs, but it's not complete because even though the logic may be sound below (which tbh it may not
+            # be), we'd still need to know the (matx - 0.5) value when we're building up the vkey arrays, which we
+            # can't do unless we introduce another array and know to index that as we're building the vkeys. tbh
+            # sounded like more trouble than it's worth, at least for me at this time.
+            # (the intention was to collapse the array into only the second element of the tuple after this if)
+            if args.matrix_sizing:  # TODO does this even make any sense?
+                # second pass to make underglow more accurate
+                # reverse iterate so that the keys preceding the key we're changing have been changed already
+                for nonxi, (realnonx, _, isnonxmat) in reversed(enumerate(xs)):
+                    if not isnonxmat:  # means that realnonx == matnonx
+                        for realxi, (realx, matx, _) in enumerate(xs):
+                            # if the key of index realxi is more to the right than the key of index nonxi, give it a
+                            # matkey of (matx - 0.5) (so that it's in between the two keys)
+                            if realx > realnonx:  # realnonx is descending so this will only be true
+                                xs[nonxi] = (realnonx, matx - 0.5, True)
+                                break
+                        # it's even further left than the leftmost key
+                        xs[nonxi] = (xs[0][0], xs[0][0], True)
+
             vkeys = ", ".join(str(x) for x in range(0, len(i_json["rgb_matrix"]["layout"])))
             vkeynames = []
             vkeypositions = []
